@@ -26,13 +26,68 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildozer-
 
-      - name: Build APK with Buildozer
-        uses: artemnovichkov/buildozer-action@v1
+      - name: Set up Python 3.9
+        uses: actions/setup-python@v5
         with:
-          command: buildozer android debug
+          python-version: '3.9'
+
+      - name: Install system dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -qq
+          sudo apt-get install -yqq \
+            git zip unzip openjdk-17-jdk python3-pip autoconf \
+            libtool pkg-config zlib1g-dev zlib1g-dev:i386 libncurses5-dev \
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
+            automake libltdl-dev texinfo help2man
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install buildozer==1.5.0 cython==0.29.36
+
+      - name: Setup Android SDK manually
+        run: |
+          SDK_DIR="$HOME/.buildozer/android/platform/android-sdk"
+          mkdir -p $SDK_DIR
+          cd $SDK_DIR
+          
+          # Télécharger et installer les command line tools
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q commandlinetools-linux-9477386_latest.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+          
+          # CRITIQUE: Buildozer cherche sdkmanager dans tools/bin/
+          mkdir -p $SDK_DIR/tools/bin
+          ln -sf $SDK_DIR/cmdline-tools/latest/bin/sdkmanager $SDK_DIR/tools/bin/sdkmanager
+          ln -sf $SDK_DIR/cmdline-tools/latest/bin/avdmanager $SDK_DIR/tools/bin/avdmanager
+          
+          # Accepter les licences
+          mkdir -p $SDK_DIR/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > $SDK_DIR/licenses/android-sdk-license
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> $SDK_DIR/licenses/android-sdk-license
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > $SDK_DIR/licenses/android-sdk-preview-license
+          
+          # Installer platform-tools et build-tools
+          export PATH=$PATH:$SDK_DIR/cmdline-tools/latest/bin:$SDK_DIR/tools/bin
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "build-tools;33.0.0" "platforms;android-33" || true
+
+      - name: Build APK with Buildozer
+        run: |
+          export ANDROIDSDK=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b
+          export PATH=$PATH:$ANDROIDSDK/cmdline-tools/latest/bin:$ANDROIDSDK/tools/bin:$ANDROIDSDK/platform-tools
+          buildozer android debug
+        env:
+          ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+          ANDROIDSDK: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+          ANDROIDNDK: ${{ github.workspace }}/.buildozer/android/platform/android-ndk-r25b
 
       - name: Verify APK exists
         run: |
+          echo "=== Recherche APK ==="
           find . -name "*.apk" -type f 2>/dev/null || true
           ls -la bin/ 2>/dev/null || true
 
@@ -40,14 +95,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: paie-burkina-apk
-          path: bin/*.apk
+          path: |
+            bin/*.apk
           retention-days: 30
           if-no-files-found: warn
-
-      - name: Upload APK to Release (if tagged)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: bin/*.apk
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
