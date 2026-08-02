@@ -46,6 +46,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install buildozer==1.5.0 cython==0.29.36
 
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
+          export ANDROID_SDK_ROOT=$HOME/.buildozer/android/platform/android-sdk
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/bin/sdkmanager --licenses || true
+
       - name: Build APK with Buildozer
         run: |
           buildozer android debug
