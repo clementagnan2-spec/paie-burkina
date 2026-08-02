@@ -44,21 +44,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install buildozer cython
 
-      - name: Use system Android SDK
+      - name: Fix Android SDK paths for Buildozer
         run: |
-          # Le runner a déjà Android SDK/NDK installés
-          echo "ANDROIDSDK=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "ANDROIDNDK=/usr/local/lib/android/sdk/ndk/27.3.13750724" >> $GITHUB_ENV
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          # Buildozer cherche SDK ici : ~/.buildozer/android/platform/android-sdk
+          BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
+          SYSTEM_SDK="/usr/local/lib/android/sdk"
+          
+          mkdir -p "$BUILDOZER_SDK"
+          
+          # Copier/coller le SDK système vers le dossier attendu par Buildozer
+          cp -r "$SYSTEM_SDK/." "$BUILDOZER_SDK/" || true
+          
+          # CRITIQUE : Buildozer cherche tools/bin/sdkmanager
+          mkdir -p "$BUILDOZER_SDK/tools/bin"
+          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
+          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
+          
           # Accepter les licences
-          yes | /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          mkdir -p "$BUILDOZER_SDK/licenses"
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$BUILDOZER_SDK/licenses/android-sdk-license"
+          echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$BUILDOZER_SDK/licenses/android-sdk-license"
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$BUILDOZER_SDK/licenses/android-sdk-preview-license"
+          
+          # Vérifier
+          ls -la "$BUILDOZER_SDK/tools/bin/"
+          "$BUILDOZER_SDK/tools/bin/sdkmanager" --list_installed || true
 
       - name: Build APK
         run: |
+          export ANDROIDSDK=$HOME/.buildozer/android/platform/android-sdk
+          export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b
           buildozer android debug
         env:
-          ANDROIDSDK: /usr/local/lib/android/sdk
-          ANDROIDNDK: /usr/local/lib/android/sdk/ndk/27.3.13750724
+          ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
+          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
