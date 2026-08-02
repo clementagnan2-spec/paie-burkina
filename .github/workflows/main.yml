@@ -10,7 +10,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-22.04
-    timeout-minutes: 120
+    timeout-minutes: 180
     
     steps:
       - name: Checkout repository
@@ -22,6 +22,7 @@ jobs:
           path: |
             ~/.buildozer
             ~/.gradle
+            ~/.cache/pip
           key: ${{ runner.os }}-buildozer-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
             ${{ runner.os }}-buildozer-
@@ -31,13 +32,14 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update -qq
           sudo apt-get install -yqq \
             git zip unzip openjdk-17-jdk python3-pip autoconf \
             libtool pkg-config zlib1g-dev libncurses5-dev \
-            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev
+            libncursesw5-dev libtinfo5 cmake libffi-dev libssl-dev \
+            libfreetype6-dev libpng-dev
 
       - name: Install Buildozer
         run: |
@@ -46,38 +48,32 @@ jobs:
 
       - name: Fix Android SDK paths for Buildozer
         run: |
-          # Buildozer cherche SDK ici : ~/.buildozer/android/platform/android-sdk
           BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
           SYSTEM_SDK="/usr/local/lib/android/sdk"
-          
           mkdir -p "$BUILDOZER_SDK"
-          
-          # Copier/coller le SDK système vers le dossier attendu par Buildozer
           cp -r "$SYSTEM_SDK/." "$BUILDOZER_SDK/" || true
-          
-          # CRITIQUE : Buildozer cherche tools/bin/sdkmanager
           mkdir -p "$BUILDOZER_SDK/tools/bin"
-          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager"
-          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager"
-          
-          # Accepter les licences
+          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/sdkmanager" "$BUILDOZER_SDK/tools/bin/sdkmanager" || true
+          ln -sf "$BUILDOZER_SDK/cmdline-tools/latest/bin/avdmanager" "$BUILDOZER_SDK/tools/bin/avdmanager" || true
           mkdir -p "$BUILDOZER_SDK/licenses"
           echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" > "$BUILDOZER_SDK/licenses/android-sdk-license"
           echo "d56f5187479451eabf01fb78af6dfcb131a6481e" >> "$BUILDOZER_SDK/licenses/android-sdk-license"
           echo "84831b9409646a918e30573bab4c9c91346d8abd" > "$BUILDOZER_SDK/licenses/android-sdk-preview-license"
-          
-          # Vérifier
-          ls -la "$BUILDOZER_SDK/tools/bin/"
-          "$BUILDOZER_SDK/tools/bin/sdkmanager" --list_installed || true
 
-      - name: Build APK
+      - name: Pre-download Python packages
         run: |
-          export ANDROIDSDK=$HOME/.buildozer/android/platform/android-sdk
-          export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b
-          buildozer android debug
-        env:
-          ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
-          ANDROIDNDK: /home/runner/.buildozer/android/platform/android-ndk-r25b
+          pip download kivy kivymd openpyxl pillow --no-deps -d ~/.buildozer/cache/
+
+      - name: Build APK with retry
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 150
+          max_attempts: 3
+          retry_on: error
+          command: |
+            export ANDROIDSDK=$HOME/.buildozer/android/platform/android-sdk
+            export ANDROIDNDK=$HOME/.buildozer/android/platform/android-ndk-r25b
+            buildozer android debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
