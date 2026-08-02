@@ -14,9 +14,8 @@ android.minapi = 21
 android.sdk = 33
 android.ndk = 25b
 android.archs = arm64-v8a,armeabi-v7a
-android.allow_backup = True
+android.accept_sdk_license = True
 android.logcat_filters = *:S python:D
-p4a.source_dir = 
 [buildozer]
 log_level = 2
 warn_on_root = 1
